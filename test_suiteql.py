@@ -1,3 +1,8 @@
+"""
+Simple test script to validate NetSuite SuiteQL connectivity.
+Executes a basic query against the employee table.
+"""
+
 from netsuite_client import NetSuiteClient
 
 client = NetSuiteClient()
