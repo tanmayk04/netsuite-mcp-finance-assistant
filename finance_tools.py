@@ -67,3 +67,25 @@ def get_total_revenue(start_date: str, end_date: str) -> dict:
     """
 
     return client.suiteql(query)
+
+def get_top_customers_by_invoice_amount(start_date: str, end_date: str, top_n: int = 10) -> dict:
+    """
+    Returns top customers by total invoiced amount between two dates.
+    Dates must be in YYYY-MM-DD format.
+    """
+    client = NetSuiteClient()
+
+    query = f"""
+    SELECT
+        t.entity,
+        SUM(t.foreigntotal) AS total_invoiced
+    FROM transaction t
+    WHERE t.type = 'CustInvc'
+      AND t.trandate >= DATE '{start_date}'
+      AND t.trandate <= DATE '{end_date}'
+    GROUP BY t.entity
+    ORDER BY total_invoiced DESC
+    FETCH FIRST {int(top_n)} ROWS ONLY
+    """
+
+    return client.suiteql(query)
