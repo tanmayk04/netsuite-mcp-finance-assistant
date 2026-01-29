@@ -80,7 +80,7 @@ class NetSuiteClient:
         )
 
 
-        resp = requests.request(method, url, headers=headers, timeout=30, **kwargs)
+        resp = requests.request(method, url, headers=headers, timeout=120, **kwargs)
 
         # If token was rejected, refresh once and retry
         if resp.status_code == 401:

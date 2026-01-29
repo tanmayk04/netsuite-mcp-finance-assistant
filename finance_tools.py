@@ -24,3 +24,28 @@ def get_overdue_invoices(days: int = 30) -> dict:
     """
 
     return client.suiteql(query)
+
+def get_unpaid_invoices_over_threshold(threshold: float = 1000.0) -> dict:
+    """
+    Returns customer invoices where the unpaid balance is greater than the given threshold.
+    """
+    client = NetSuiteClient()
+
+    query = f"""
+    SELECT
+        t.id,
+        t.tranid,
+        t.trandate,
+        t.duedate,
+        t.entity,
+        t.foreigntotal,
+        t.foreignamountunpaid
+    FROM transaction t
+    WHERE t.type = 'CustInvc'
+        AND t.duedate >= (CURRENT_DATE - 90)
+        AND t.foreignamountunpaid > {float(threshold)}
+    ORDER BY t.foreignamountunpaid DESC
+    FETCH FIRST 10 ROWS ONLY
+    """
+
+    return client.suiteql(query)
