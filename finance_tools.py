@@ -13,7 +13,8 @@ def get_overdue_invoices(days: int = 30) -> dict:
         t.tranid,
         t.entity,
         t.trandate,
-        t.duedate  
+        t.duedate,
+        t.foreigntotal  
     FROM transaction t
     WHERE t.type = 'CustInvc'
       AND t.duedate < CURRENT_DATE
