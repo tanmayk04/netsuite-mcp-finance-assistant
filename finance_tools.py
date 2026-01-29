@@ -49,3 +49,21 @@ def get_unpaid_invoices_over_threshold(threshold: float = 1000.0) -> dict:
     """
 
     return client.suiteql(query)
+
+def get_total_revenue(start_date: str, end_date: str) -> dict:
+    """
+    Returns total invoice revenue between two dates (inclusive).
+    Dates must be in YYYY-MM-DD format.
+    """
+    client = NetSuiteClient()
+
+    query = f"""
+    SELECT
+        SUM(t.foreigntotal) AS total_revenue
+    FROM transaction t
+    WHERE t.type = 'CustInvc'
+      AND t.trandate >= DATE '{start_date}'
+      AND t.trandate <= DATE '{end_date}'
+    """
+
+    return client.suiteql(query)
