@@ -15,9 +15,12 @@ More tools will be added later.
 from mcp.server.fastmcp import FastMCP
 
 # Import the finance logic we already built and tested
-from finance_tools import get_overdue_invoices, get_unpaid_invoices_over_threshold
-
-
+from finance_tools import (
+    get_overdue_invoices,
+    get_unpaid_invoices_over_threshold,
+    get_total_revenue,
+    get_top_customers_by_invoice_amount
+)
 
 # Create an MCP server instance
 # The name is what AI clients will see
@@ -62,6 +65,23 @@ def unpaid_invoices_over_threshold(threshold: float = 1000.0) -> dict:
     - JSON response from NetSuite (list of invoices)
     """
     return get_unpaid_invoices_over_threshold(threshold)
+
+@mcp.tool()
+def total_revenue(start_date: str, end_date: str) -> dict:
+    """
+    MCP Tool: total_revenue
+    Return total invoice revenue between two dates (YYYY-MM-DD).
+    """
+    return get_total_revenue(start_date, end_date)
+
+
+@mcp.tool()
+def top_customers_by_invoice_amount(start_date: str, end_date: str, top_n: int = 10) -> dict:
+    """
+    MCP Tool: top_customers_by_invoice_amount
+    Return top N customers by total invoiced amount between two dates (YYYY-MM-DD).
+    """
+    return get_top_customers_by_invoice_amount(start_date, end_date, top_n)
 
 
 # Entry point when running this file directly
