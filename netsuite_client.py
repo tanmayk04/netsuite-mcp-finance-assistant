@@ -54,9 +54,15 @@ class NetSuiteClient:
             data={
                 "grant_type": "refresh_token",
                 "refresh_token": self.refresh_token,
+                "scope": "rest_webservices",
             },
             timeout=30,
         )
+
+        if resp.status_code >= 400:
+            print("TOKEN STATUS:", resp.status_code)
+            print("TOKEN BODY:", resp.text)
+
         resp.raise_for_status()
         token = resp.json()["access_token"]
         self._access_token = token
