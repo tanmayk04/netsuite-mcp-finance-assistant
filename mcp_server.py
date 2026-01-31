@@ -13,15 +13,20 @@ More tools will be added later.
 # FastMCP is a lightweight helper that makes it easy
 # to create an MCP-compatible tool server
 from mcp.server.fastmcp import FastMCP
+from netsuite_client import NetSuiteClient
 
 # Import the finance logic we already built and tested
 from finance_tools import (
     get_overdue_invoices,
     get_unpaid_invoices_over_threshold,
     get_total_revenue,
-    get_top_customers_by_invoice_amount
+    get_top_customers_by_invoice_amount,
+    ar_aging_summary,
+    customer_risk_profiles,
+    collections_priority_queue
 )
 
+client = NetSuiteClient()
 # Create an MCP server instance
 # The name is what AI clients will see
 mcp = FastMCP("netsuite-finance-assistant")
@@ -83,9 +88,31 @@ def top_customers_by_invoice_amount(start_date: str, end_date: str, top_n: int =
     """
     return get_top_customers_by_invoice_amount(start_date, end_date, top_n)
 
+@mcp.tool()
+def ar_aging_summary_tool(lookback_days: int = 365) -> dict:
+
+    """Return AR aging buckets and top overdue customers."""
+
+    return ar_aging_summary(client, lookback_days=lookback_days)
+
+@mcp.tool()
+def customer_risk_profiles_tool(top_n: int = 25, lookback_days: int = 365) -> dict:
+
+    """Return customer risk tiers + scores + reasons for late payment."""
+
+    return customer_risk_profiles(client, top_n=top_n, lookback_days=lookback_days)
+
+@mcp.tool()
+def collections_priority_queue_tool(top_n: int = 50, lookback_days: int = 365) -> dict:
+
+    """Return ranked collections worklist (who to contact first)."""
+
+    return collections_priority_queue(client, top_n=top_n, lookback_days=lookback_days)
+
 
 # Entry point when running this file directly
 if __name__ == "__main__":
     # Start the MCP server
     # This opens a local server that AI tools can connect to
     mcp.run(transport="stdio")
+
