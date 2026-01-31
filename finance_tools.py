@@ -564,3 +564,198 @@ def collections_priority_queue(
         "as_of_date": as_of_date.isoformat(),
         "queue": queue[:top_n],
     }
+
+def daily_ar_brief(
+    client,
+    as_of_date: Optional[date] = None,
+    lookback_days: int = 365,
+    limit: int = 1000,
+    top_n_queue: int = 10,
+    top_n_risk: int = 10,
+) -> Dict[str, Any]:
+    """
+    One-call AR operations brief:
+    - Aging snapshot (0–10 / 11–20 / 21–30 / 31+)
+    - Top risk customers
+    - Today's collections priority worklist
+    - Escalations to focus on
+    """
+
+    if as_of_date is None:
+        as_of_date = date.today()
+
+    aging = ar_aging_summary(client, as_of_date=as_of_date, lookback_days=lookback_days, limit=limit)
+    risks = customer_risk_profiles(client, as_of_date=as_of_date, lookback_days=lookback_days, limit=limit, top_n=top_n_risk)
+    queue = collections_priority_queue(client, as_of_date=as_of_date, lookback_days=lookback_days, limit=limit, top_n=top_n_queue)
+
+    totals = aging.get("totals", {})
+    counts = aging.get("counts", {})
+
+    open_total = float(totals.get("open_ar_total") or 0.0)
+    current_amt = float(totals.get("current") or 0.0)
+
+    # Overdue total = open total - current (safe even if buckets change)
+    overdue_total = max(open_total - current_amt, 0.0)
+    overdue_pct = round((overdue_total / open_total) * 100, 2) if open_total > 0 else 0.0
+
+    # Find largest overdue bucket (excluding current)
+    overdue_bucket_keys = [k for k in totals.keys() if k.startswith("overdue_")]
+    largest_bucket = None
+    if overdue_bucket_keys:
+        largest_bucket = max(overdue_bucket_keys, key=lambda k: float(totals.get(k) or 0.0))
+
+    # Escalations rule (simple + explainable):
+    # - Any queue item with max_days_overdue >= 31 OR priority_score >= 0.80
+    escalations = []
+    for item in queue.get("queue", []):
+        if int(item.get("max_days_overdue") or 0) >= 31 or float(item.get("priority_score") or 0) >= 0.80:
+            escalations.append(item)
+
+    headline = {
+        "open_ar_total": round(open_total, 2),
+        "overdue_total": round(overdue_total, 2),
+        "overdue_pct": overdue_pct,
+        "open_invoices": int(counts.get("open_invoices") or 0),
+        "largest_overdue_bucket_key": largest_bucket,
+        "largest_overdue_bucket_amount": round(float(totals.get(largest_bucket) or 0.0), 2) if largest_bucket else 0.0,
+    }
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "headline": headline,
+        "aging": aging,                        # full details
+        "top_risk_customers": risks.get("customers", []),
+        "today_priority_queue": queue.get("queue", []),
+        "escalations": escalations,
+    }
+
+
+def draft_collections_emails(
+    client,
+    as_of_date: Optional[date] = None,
+    lookback_days: int = 365,
+    limit: int = 1000,
+    top_n: int = 10,
+    sender_name: str = "Accounts Receivable Team",
+    company_name: str = "Your Company",
+) -> Dict[str, Any]:
+    """
+    Creates email drafts for the top-N customers in the collections priority queue.
+    SAFE: does not send emails, only returns draft subjects/bodies.
+
+    Uses bucket signals via the queue's max_days_overdue + reasons to choose tone.
+    """
+
+    if as_of_date is None:
+        as_of_date = date.today()
+
+    queue_resp = collections_priority_queue(
+        client,
+        as_of_date=as_of_date,
+        lookback_days=lookback_days,
+        limit=limit,
+        top_n=top_n,
+    )
+
+    drafts: List[Dict[str, Any]] = []
+
+    for item in queue_resp.get("queue", []):
+        customer_name = item.get("customer_name", "Customer")
+        overdue_ar = float(item.get("overdue_ar") or 0.0)
+        max_days = int(item.get("max_days_overdue") or 0)
+        action = item.get("recommended_action") or "Follow up"
+        reasons = item.get("reasons") or []
+
+        # Decide "tone" based on your new bucket logic
+        # 0-10: gentle, 11-20: reminder, 21-30: firm, 31+: escalation
+        if max_days >= 31:
+            tone = "escalation"
+        elif max_days >= 21:
+            tone = "firm"
+        elif max_days >= 11:
+            tone = "reminder"
+        else:
+            tone = "gentle"
+
+        # Subject lines by tone
+        if tone == "gentle":
+            subject = f"Friendly reminder: invoice payment due"
+        elif tone == "reminder":
+            subject = f"Reminder: outstanding balance - action requested"
+        elif tone == "firm":
+            subject = f"Past due notice: outstanding balance requires attention"
+        else:
+            subject = f"Urgent: past due balance — please respond"
+
+        # Build a clean reason sentence (optional, keeps it explainable)
+        reason_line = ""
+        if reasons:
+            # Keep it short to avoid dumping internal scoring
+            # Example: "$183.27 overdue; Oldest overdue 17 days"
+            trimmed = "; ".join([str(r) for r in reasons[:2]])
+            reason_line = f"\n\n(Internal note: {trimmed})"
+
+        # Email body templates
+        if tone == "gentle":
+            body = f"""Hi {customer_name},
+
+Hope you're doing well. This is a friendly reminder that we have an outstanding balance of ${overdue_ar:,.2f} on your account.
+
+If payment has already been sent, please disregard this message. Otherwise, could you share an expected payment date?
+
+Thank you,
+{sender_name}
+{company_name}
+"""
+        elif tone == "reminder":
+            body = f"""Hi {customer_name},
+
+This is a reminder that we have an outstanding balance of ${overdue_ar:,.2f} that appears past due.
+
+Could you please confirm the payment status and provide an expected payment date? If there are any issues with the invoice, let us know and we’ll help resolve them.
+
+Thanks,
+{sender_name}
+{company_name}
+"""
+        elif tone == "firm":
+            body = f"""Hi {customer_name},
+
+Our records show an outstanding past-due balance of ${overdue_ar:,.2f}. Please treat this as a past due notice.
+
+Please reply with a payment date or any details needed to resolve this promptly. If payment has already been initiated, share the remittance information.
+
+Regards,
+{sender_name}
+{company_name}
+"""
+        else:
+            body = f"""Hi {customer_name},
+
+We are following up urgently regarding a past-due balance of ${overdue_ar:,.2f}.
+
+Please respond today with the payment status and a confirmed payment date. If there is a dispute or issue preventing payment, notify us immediately so we can address it.
+
+Regards,
+{sender_name}
+{company_name}
+"""
+
+        drafts.append({
+            "rank": item.get("rank"),
+            "customer_id": item.get("customer_id"),
+            "customer_name": customer_name,
+            "recommended_action": action,
+            "max_days_overdue": max_days,
+            "overdue_ar": round(overdue_ar, 2),
+            "subject": subject,
+            "body": body.strip() + reason_line,  # internal note appended for your review
+        })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "count": len(drafts),
+        "drafts": drafts,
+        "note": "Drafts only — no emails were sent.",
+    }
+

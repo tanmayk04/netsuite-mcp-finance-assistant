@@ -23,7 +23,9 @@ from finance_tools import (
     get_top_customers_by_invoice_amount,
     ar_aging_summary,
     customer_risk_profiles,
-    collections_priority_queue
+    collections_priority_queue,
+    daily_ar_brief,
+    draft_collections_emails
 )
 
 client = NetSuiteClient()
@@ -109,10 +111,27 @@ def collections_priority_queue_tool(top_n: int = 50, lookback_days: int = 365) -
 
     return collections_priority_queue(client, top_n=top_n, lookback_days=lookback_days)
 
+@mcp.tool()
+def daily_ar_brief_tool(top_n_queue: int = 10, top_n_risk: int = 10, lookback_days: int = 365) -> dict:
+    """One-call AR operations brief: headline metrics, aging, top risks, priority queue, escalations."""
+    return daily_ar_brief(
+        client,
+        top_n_queue=top_n_queue,
+        top_n_risk=top_n_risk,
+        lookback_days=lookback_days,
+    )
+
+@mcp.tool()
+def draft_collections_emails_tool(top_n: int = 10, lookback_days: int = 365) -> dict:
+    """Create email drafts for the top-N customers in today's collections queue (no emails sent)."""
+    return draft_collections_emails(
+        client,
+        top_n=top_n,
+        lookback_days=lookback_days,
+    )
 
 # Entry point when running this file directly
 if __name__ == "__main__":
     # Start the MCP server
     # This opens a local server that AI tools can connect to
     mcp.run(transport="stdio")
-
