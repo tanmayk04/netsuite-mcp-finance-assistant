@@ -759,3 +759,126 @@ Regards,
         "note": "Drafts only — no emails were sent.",
     }
 
+def send_collections_emails(
+    client,
+    as_of_date: Optional[date] = None,
+    lookback_days: int = 365,
+    limit: int = 1000,
+    top_n: int = 5,
+    dry_run: bool = True,
+    test_recipient: str = "",
+    max_send: int = 5,
+) -> Dict[str, Any]:
+    """
+    Sends (or simulates sending) collection emails via Gmail SMTP.
+
+    SAFETY:
+    - dry_run=True by default
+    - max_send limits volume
+    - test_recipient lets you send everything to yourself for demo testing
+    """
+
+    if as_of_date is None:
+        as_of_date = date.today()
+
+    drafts_resp = draft_collections_emails(
+        client,
+        as_of_date=as_of_date,
+        lookback_days=lookback_days,
+        limit=limit,
+        top_n=top_n,
+    )
+
+    results: List[Dict[str, Any]] = []
+    sent_count = 0
+
+    for d in drafts_resp.get("drafts", []):
+        if sent_count >= max_send:
+            break
+
+        # For demo: always send to test_recipient if provided
+        to_email = test_recipient.strip() if test_recipient else ""
+        if not to_email:
+            # still no real customer emails integrated yet
+            to_email = "ar-test@company.com"
+
+        subject = d["subject"]
+
+        # IMPORTANT: do NOT include internal note when sending
+        body = d["body"].split("\n\n(Internal note:")[0].strip()
+
+        if dry_run:
+            results.append({
+                "customer_id": d["customer_id"],
+                "customer_name": d["customer_name"],
+                "to": to_email,
+                "subject": subject,
+                "sent": False,
+                "dry_run": True,
+            })
+            continue
+
+        # Real send
+        try:
+            _send_email_outlook(to_email, subject, body)
+            sent_count += 1
+            results.append({
+                "customer_id": d["customer_id"],
+                "customer_name": d["customer_name"],
+                "to": to_email,
+                "subject": subject,
+                "sent": True,
+                "dry_run": False,
+            })
+        except Exception as e:
+            results.append({
+                "customer_id": d["customer_id"],
+                "customer_name": d["customer_name"],
+                "to": to_email,
+                "subject": subject,
+                "sent": False,
+                "dry_run": False,
+                "error": str(e),
+            })
+
+    return {
+        "as_of_date": as_of_date.isoformat(),
+        "dry_run": dry_run,
+        "emails_prepared": len(drafts_resp.get("drafts", [])),
+        "emails_attempted": min(top_n, max_send),
+        "emails_sent": sent_count,
+        "results": results,
+        "note": "Sent via Outlook SMTP (or simulated if dry_run=True).",
+    }
+
+import os
+import smtplib
+from email.message import EmailMessage
+from dotenv import load_dotenv
+
+
+def _send_email_outlook(to_email: str, subject: str, body: str) -> None:
+    load_dotenv()
+
+    host = os.getenv("SMTP_HOST", "smtp.office365.com")
+    port = int(os.getenv("SMTP_PORT", "587"))
+    user = os.getenv("SMTP_USER")
+    password = os.getenv("SMTP_PASS")
+    from_email = os.getenv("SMTP_FROM", user)
+
+    if not all([host, port, user, password, from_email]):
+        raise ValueError("Missing SMTP env vars (SMTP_HOST/PORT/USER/PASS/FROM).")
+
+    msg = EmailMessage()
+    msg["From"] = from_email
+    msg["To"] = to_email
+    msg["Subject"] = subject
+    msg.set_content(body)
+
+    with smtplib.SMTP(host, port, timeout=30) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(user, password)
+        server.send_message(msg)
+
+
