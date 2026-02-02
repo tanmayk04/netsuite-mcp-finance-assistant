@@ -25,7 +25,8 @@ from finance_tools import (
     customer_risk_profiles,
     collections_priority_queue,
     daily_ar_brief,
-    draft_collections_emails
+    draft_collections_emails,
+    send_collections_emails
 )
 
 client = NetSuiteClient()
@@ -129,6 +130,31 @@ def draft_collections_emails_tool(top_n: int = 10, lookback_days: int = 365) -> 
         top_n=top_n,
         lookback_days=lookback_days,
     )
+
+@mcp.tool()
+def send_collections_emails_tool(
+    top_n: int = 5,
+    lookback_days: int = 365,
+    dry_run: bool = False,
+    test_recipient: str = "",
+    max_send: int = 3,
+) -> dict:
+    """
+    Send (or simulate) collections emails using SMTP.
+    SAFETY DEFAULTS:
+      - dry_run=True
+      - max_send=3
+      - test_recipient optional (recommended for demos)
+    """
+    return send_collections_emails(
+        client,
+        top_n=top_n,
+        lookback_days=lookback_days,
+        dry_run=dry_run,
+        test_recipient=test_recipient,
+        max_send=max_send,
+    )
+
 
 # Entry point when running this file directly
 if __name__ == "__main__":
